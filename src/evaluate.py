@@ -72,10 +72,12 @@ class LOOEvaluator:
     def run(
         self,
         recs_path: str,
-        experiment: str,
+        experiment: str = None,
         test_path: str = "data/processed/test.csv",
         metrics_dir: str = "data/metrics",
     ):
+        if experiment is None:
+            experiment = Path(recs_path).stem
         recs = pd.read_csv(recs_path, dtype={self.user_col: str, self.item_col: str})
         summary = self.evaluate(recs, test_path)
 
@@ -94,7 +96,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--recs_path", required=True)
-    parser.add_argument("--experiment", required=True)
+    parser.add_argument("--experiment", default=None)
     parser.add_argument("--test_path", default="data/processed/test.csv")
     parser.add_argument("--metrics_dir", default="data/metrics")
     args = parser.parse_args()
