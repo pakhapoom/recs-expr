@@ -1,49 +1,11 @@
-# Project Starter Kit
+# Recommendations experiment
 
-A Python project starter template with [Claude Code](https://claude.ai/code) integration pre-configured.
+## Getting Started
 
-## What's included
+### 1. Download MovieLens 1M
 
-| Path | Purpose |
-|---|---|
-| `.gitignore` | Ignores `.venv`, `__pycache__`, build artifacts |
-| `CLAUDE.md` | Claude Code instructions — enforces `uv`, code style, and response preferences |
-| `.claude/settings.local.json` | Pre-approved Claude Code tool permissions |
-| `.claude/commands/commit.md` | `/commit` slash command — stages and commits using Conventional Commits |
-| `.claude/commands/pr.md` | `/pr` slash command — generates a PR description markdown file |
-
-## Getting started
+Downloads the [MovieLens 1M dataset](https://grouplens.org/datasets/movielens/1m/) and saves `users.csv`, `movies.csv`, and `ratings.csv` to `data/raw/`.
 
 ```bash
-# 1. Clone
-# HTTPS
-git clone https://github.com/pakhapoom/project-starter.git my-project
-
-# SSH
-git clone git@github.com:pakhapoom/project-starter.git my-project
-
-# Strip the remote
-cd my-project
-git remote remove origin
-
-# 2. Initialize project
-uv init
-
-# 3. Install dependencies
-uv sync
-
-# 4. Add packages as needed
-uv add <package>
+uv run src/movielens/download.py
 ```
-
-## Requirements
-
-- Python 3.12+
-- [`uv`](https://docs.astral.sh/uv/) — used for all dependency and execution tasks
-
-## Claude Code slash commands
-
-| Command | Description |
-|---|---|
-| `/commit` | Stage all changes and commit following Conventional Commits |
-| `/pr <branch>` | Generate a `pr-<branch>.md` describing changes vs. a target branch |
