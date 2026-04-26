@@ -85,7 +85,7 @@ class LOOEvaluator:
 
         out = Path(metrics_dir) / f"{experiment}.csv"
         out.parent.mkdir(parents=True, exist_ok=True)
-        summary.to_csv(out, index=False)
+        summary.to_csv(out, mode="a", header=not out.exists(), index=False)
         print(f"\nSaved → {out}")
 
         return summary
