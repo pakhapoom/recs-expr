@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -102,15 +103,20 @@ class PopularityRecommender:
         test_path: str = "data/processed/test.csv",
         users_path: str = "data/raw/users.csv",
         recs_path: str = "data/recs/popularity.csv",
+        metrics_dir: str = "data/metrics",
     ):
         train, val, test, users = self._load_data(train_path, val_path, test_path, users_path)
         interactions = pd.concat([train, val], ignore_index=True)
-        seg_pop, global_pop = self._compute_popularity(interactions, users)
-        user_history = self._get_user_history(train, val)
 
+        t0 = time.perf_counter()
+        seg_pop, global_pop = self._compute_popularity(interactions, users)
+        time_training_s = time.perf_counter() - t0
+
+        user_history = self._get_user_history(train, val)
         user_segments = users.set_index(self.user_col)[self.segment_cols].to_dict("index")
         test_users = test[self.user_col].unique()
 
+        t0 = time.perf_counter()
         recs = pd.concat(
             [
                 self._recommend_user(
@@ -124,11 +130,22 @@ class PopularityRecommender:
             ],
             ignore_index=True,
         )
+        time_inference_s = time.perf_counter() - t0
 
         out = Path(recs_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         recs.to_csv(out, index=False)
         print(f"Saved {len(recs):,} rows → {out}")
+
+        experiment = out.stem
+        timing = pd.DataFrame([
+            {"metric": "time_training_s", "value": time_training_s},
+            {"metric": "time_inference_s", "value": time_inference_s},
+        ])
+        metrics_out = Path(metrics_dir) / f"{experiment}.csv"
+        metrics_out.parent.mkdir(parents=True, exist_ok=True)
+        timing.to_csv(metrics_out, index=False)
+        print(f"Timing → {metrics_out}")
 
 
 if __name__ == "__main__":

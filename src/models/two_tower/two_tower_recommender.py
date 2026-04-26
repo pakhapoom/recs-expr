@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -91,6 +92,7 @@ class TwoTowerRecommender:
         users_path: str = "data/raw/users.csv",
         movies_path: str = "data/raw/movies.csv",
         recs_path: str = "data/recs/two_tower.csv",
+        metrics_dir: str = "data/metrics",
     ):
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -106,6 +108,8 @@ class TwoTowerRecommender:
         store = FeatureStore(max_history=self.max_history).fit(movies, users)
         user_feats = store.encode_users(users)
         train_histories = store.encode_histories(train)
+
+        t_train_start = time.perf_counter()
 
         # --- Stage 1: retrieval ---
         print("Stage 1: Training retrieval model...")
@@ -125,16 +129,6 @@ class TwoTowerRecommender:
             lr=self.lr,
             device=device,
         )
-
-        # Pre-encode all items
-        print("Encoding all items...")
-        retrieval_model.eval()
-        all_item_idx = torch.arange(len(store.movie_ids), dtype=torch.long, device=device)
-        all_genres = torch.tensor(store.item_genres, device=device)
-        all_year = torch.tensor(store.item_year, device=device)
-        with torch.no_grad():
-            all_item_emb = retrieval_model.encode_item(all_item_idx, all_genres, all_year)
-            all_item_emb_np = all_item_emb.cpu().numpy()  # (M, D)
 
         # --- Build history sets (train + val) for exclusion and user encoding at inference ---
         train_val = pd.concat([train, val], ignore_index=True)
@@ -162,6 +156,20 @@ class TwoTowerRecommender:
             lr=self.lr,
             device=device,
         )
+
+        time_training_s = time.perf_counter() - t_train_start
+
+        t_infer_start = time.perf_counter()
+
+        # Pre-encode all items
+        print("Encoding all items...")
+        retrieval_model.eval()
+        all_item_idx = torch.arange(len(store.movie_ids), dtype=torch.long, device=device)
+        all_genres = torch.tensor(store.item_genres, device=device)
+        all_year = torch.tensor(store.item_year, device=device)
+        with torch.no_grad():
+            all_item_emb = retrieval_model.encode_item(all_item_idx, all_genres, all_year)
+            all_item_emb_np = all_item_emb.cpu().numpy()  # (M, D)
 
         # --- Recommend for test users ---
         print("Generating recommendations...")
@@ -210,11 +218,23 @@ class TwoTowerRecommender:
                         self.score_col: float(ranking_scores[rank_pos]),
                     })
 
+        time_inference_s = time.perf_counter() - t_infer_start
+
         recs = pd.DataFrame(recs_list)
         out = Path(recs_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         recs.to_csv(out, index=False)
         print(f"Saved {len(recs):,} rows → {out}")
+
+        experiment = out.stem
+        timing = pd.DataFrame([
+            {"metric": "time_training_s", "value": time_training_s},
+            {"metric": "time_inference_s", "value": time_inference_s},
+        ])
+        metrics_out = Path(metrics_dir) / f"{experiment}.csv"
+        metrics_out.parent.mkdir(parents=True, exist_ok=True)
+        timing.to_csv(metrics_out, index=False)
+        print(f"Timing → {metrics_out}")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import numpy as np
@@ -59,12 +60,14 @@ class RandomRecommender:
         val_path: str = "data/processed/val.csv",
         test_path: str = "data/processed/test.csv",
         recs_path: str = "data/recs/random.csv",
+        metrics_dir: str = "data/metrics",
     ):
         train, val, test = self._load_data(train_path, val_path, test_path)
         item_pool = self._get_item_pool(train)
         user_history = self._get_user_history(train, val)
         test_users = test[self.user_col].unique()
 
+        t0 = time.perf_counter()
         recs = pd.concat(
             [
                 self._recommend_user(user, item_pool, user_history.get(user, set()))
@@ -72,11 +75,22 @@ class RandomRecommender:
             ],
             ignore_index=True,
         )
+        time_inference_s = time.perf_counter() - t0
 
         out = Path(recs_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         recs.to_csv(out, index=False)
         print(f"Saved {len(recs):,} rows → {out}")
+
+        experiment = out.stem
+        timing = pd.DataFrame([
+            {"metric": "time_training_s", "value": 0.0},
+            {"metric": "time_inference_s", "value": time_inference_s},
+        ])
+        metrics_out = Path(metrics_dir) / f"{experiment}.csv"
+        metrics_out.parent.mkdir(parents=True, exist_ok=True)
+        timing.to_csv(metrics_out, index=False)
+        print(f"Timing → {metrics_out}")
 
 
 if __name__ == "__main__":
