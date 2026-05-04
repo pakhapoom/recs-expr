@@ -69,4 +69,4 @@ EOF
 # sleep infinity
 
 # Main job
-srun uv run src/models/two_tower/two_tower_recommender.py
+srun python src/models/two_tower/two_tower_recommender.py
