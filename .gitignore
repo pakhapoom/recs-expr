@@ -16,5 +16,5 @@ data
 .DS_Store
 
 # logs
-logs
-snorlax.*
+logs/*
+!logs/.gitkeep

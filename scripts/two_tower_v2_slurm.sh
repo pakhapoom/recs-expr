@@ -5,8 +5,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=12:00:00
-#SBATCH --output=two-tower-v2-%j.out
-#SBATCH --error=two-tower-v2-%j.err
+#SBATCH --output=logs/two-tower-v2-%j.out
+#SBATCH --error=logs/two-tower-v2-%j.err
 
 set -euo pipefail
 

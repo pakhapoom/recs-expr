@@ -5,8 +5,8 @@
 #SBATCH --time=10:00:00               # Duration of reservation (2 hours here for forget to kill), can be --time=INFINITE
 #SBATCH --partition=batch             # Partition to submit to (ensure it supports GPUs)
 #SBATCH --gres=gpu:1                  # Number of GPUs to reserve (adjust as needed)
-#SBATCH --output=snorlax.out          # Output file
-#SBATCH --error=snorlax.err           # Error file
+#SBATCH --output=logs/snorlax-%j.out  # Output file
+#SBATCH --error=logs/snorlax-%j.err   # Error file
 
 # Display reserved node(s)
 echo "Reserving the following node(s):"
