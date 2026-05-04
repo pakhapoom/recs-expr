@@ -47,3 +47,11 @@ ndcg@100  0.059200
 
 Saved → data/metrics/my_model.csv
 ```
+
+### 5. Plot NDCG@k
+
+Plots the `ndcg@k` rows from the default experiment metrics files in `data/metrics/` and saves a comparison chart.
+
+```bash
+uv run src/plot_ndcg.py
+```
