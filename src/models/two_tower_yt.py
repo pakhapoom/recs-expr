@@ -111,10 +111,10 @@ class YouTubeTwoTowerRecommender:
         n_recs: int = 100,
         max_history: int = 50,
         max_examples_per_user: int = 50,
-        embed_dim: int = 128,
-        epochs: int = 6,
-        batch_size: int = 4096,
-        n_neg: int = 64,
+        embed_dim: int = 256,
+        epochs: int = 10,
+        batch_size: int = 1024,
+        n_neg: int = 128,
         lr: float = 2e-3,
         weight_decay: float = 1e-5,
         seed: int = 42,
@@ -491,7 +491,7 @@ class YouTubeTwoTowerRecommender:
         test_path: str = "data/processed/test.csv",
         users_path: str = "data/raw/users.csv",
         movies_path: str = "data/raw/movies.csv",
-        recs_path: str = "data/recs/two-tower-yt.csv",
+        recs_path: str = "data/recs/two_tower_yt.csv",
         metrics_dir: str = "data/metrics",
     ):
         torch.manual_seed(self.seed)
@@ -555,15 +555,15 @@ def _parse_args():
     parser.add_argument("--test-path", default="data/processed/test.csv")
     parser.add_argument("--users-path", default="data/raw/users.csv")
     parser.add_argument("--movies-path", default="data/raw/movies.csv")
-    parser.add_argument("--recs-path", default="data/recs/two-tower-yt.csv")
+    parser.add_argument("--recs-path", default="data/recs/two_tower_yt.csv")
     parser.add_argument("--metrics-dir", default="data/metrics")
     parser.add_argument("--n-recs", type=int, default=100)
     parser.add_argument("--max-history", type=int, default=50)
     parser.add_argument("--max-examples-per-user", type=int, default=50)
-    parser.add_argument("--embed-dim", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=6)
-    parser.add_argument("--batch-size", type=int, default=4096)
-    parser.add_argument("--n-neg", type=int, default=64)
+    parser.add_argument("--embed-dim", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument("--n-neg", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--seed", type=int, default=42)

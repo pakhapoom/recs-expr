@@ -17,6 +17,6 @@ echo "Host: $(hostname)"
 echo "Started: $(date)"
 
 srun python src/models/two_tower_yt.py
-srun python src/evaluate.py --recs_path data/recs/two-tower-yt.csv
+srun python src/evaluate.py --recs_path data/recs/two_tower_yt.csv
 
 echo "Finished: $(date)"
