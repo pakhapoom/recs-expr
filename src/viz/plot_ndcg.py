@@ -11,12 +11,14 @@ DEFAULT_EXPERIMENTS = [
     "two_tower",
     "two_tower_v2",
     "two_tower_yt_cand_gen",
+    "two_tower_yt_expand_dim",
 ]
 
 EXPERIMENT_LABELS = {
     "two_tower": "two tower (manual)",
     "two_tower_v2": "two tower (single stage)",
     "two_tower_yt_cand_gen": "two tower (cand)",
+    "two_tower_yt_expand_dim": "two tower (expand dim)",
 }
 
 
@@ -42,7 +44,7 @@ def plot_ndcg_at_k(
     title: str | None = None,
 ) -> None:
     plt.style.use("seaborn-v0_8-white")
-    fig, ax = plt.subplots(figsize=(11, 5.5))
+    fig, ax = plt.subplots(figsize=(13.5, 5.5))
     experiments = experiments or DEFAULT_EXPERIMENTS
     labels = [format_label(experiment) for experiment in experiments]
     values = [
