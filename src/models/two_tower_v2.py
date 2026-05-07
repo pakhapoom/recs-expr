@@ -1,12 +1,21 @@
 import re
+import sys
 import time
 from pathlib import Path
+
+project_root = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "src" / "models" / "candidate_sets.py").exists()
+)
+sys.path.insert(0, str(project_root))
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from src.models.candidate_sets import candidate_indices, load_candidate_map
 
 
 GENRES = [
@@ -365,11 +374,13 @@ class TwoTowerV2Recommender:
         hist_items: np.ndarray,
         hist_weights: np.ndarray,
         watched: np.ndarray,
+        candidate_map: dict[str, list[str]] | None,
         device: str,
     ) -> pd.DataFrame:
         model.eval()
         test_users = test[self.user_col].astype(str).unique().tolist()
         test_user_idx = np.array([features["user_id2idx"][user_id] for user_id in test_users])
+        candidate_idx_by_user = candidate_indices(candidate_map, features["movie_id2idx"])
 
         gender_t = torch.tensor(features["gender"], dtype=torch.long, device=device)
         age_t = torch.tensor(features["age"], dtype=torch.long, device=device)
@@ -401,19 +412,33 @@ class TwoTowerV2Recommender:
                     hist_weights_t[users],
                 ).cpu().numpy()
 
-                scores = user_emb @ item_emb_np.T * scale + item_bias[None, :]
-                scores[watched[batch_idx]] = -np.inf
-
                 for row_pos, user_idx in enumerate(batch_idx):
-                    top_n = min(self.n_recs, int(np.isfinite(scores[row_pos]).sum()))
-                    top = np.argpartition(scores[row_pos], -top_n)[-top_n:]
-                    top = top[np.argsort(scores[row_pos, top])[::-1]]
                     user_id = features["user_ids"][user_idx]
+                    if candidate_idx_by_user is None:
+                        item_candidates = np.flatnonzero(~watched[user_idx])
+                    else:
+                        item_candidates = candidate_idx_by_user.get(
+                            user_id,
+                            np.asarray([], dtype=np.int64),
+                        )
+                        item_candidates = item_candidates[~watched[user_idx, item_candidates]]
+
+                    top_n = min(self.n_recs, len(item_candidates))
+                    if top_n == 0:
+                        continue
+
+                    scores = (
+                        user_emb[row_pos] @ item_emb_np[item_candidates].T * scale
+                        + item_bias[item_candidates]
+                    )
+                    top = np.argpartition(scores, -top_n)[-top_n:]
+                    top = top[np.argsort(scores[top])[::-1]]
                     for item in top:
+                        item_idx = item_candidates[item]
                         rows.append({
                             self.user_col: user_id,
-                            self.item_col: features["movie_ids"][item],
-                            self.score_col: float(scores[row_pos, item]),
+                            self.item_col: features["movie_ids"][item_idx],
+                            self.score_col: float(scores[item]),
                         })
 
         return pd.DataFrame(rows)
@@ -425,6 +450,7 @@ class TwoTowerV2Recommender:
         test_path: str = "data/processed/test.csv",
         users_path: str = "data/raw/users.csv",
         movies_path: str = "data/raw/movies.csv",
+        candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/two_tower_v2.csv",
         metrics_dir: str = "data/metrics",
     ):
@@ -444,6 +470,13 @@ class TwoTowerV2Recommender:
         features = self._build_features(users, movies)
         user_idx, item_idx, ratings = self._map_interactions(fit, features)
         hist_items, hist_weights, watched = self._build_history(fit, features)
+        test_users = test[self.user_col].astype(str).unique().tolist()
+        candidate_map = load_candidate_map(
+            candidates_path,
+            self.user_col,
+            self.item_col,
+            test_users,
+        )
 
         model = TwoTowerV2Model(
             num_users=len(features["user_ids"]),
@@ -466,6 +499,7 @@ class TwoTowerV2Recommender:
             hist_items,
             hist_weights,
             watched,
+            candidate_map,
             device,
         )
         time_training_s = time.perf_counter() - t_train_start

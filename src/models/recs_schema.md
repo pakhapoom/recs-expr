@@ -2,6 +2,22 @@
 
 The `recs` DataFrame passed to `LOOEvaluator.evaluate()` (or loaded from `recs_path` in `run()`) must conform to this schema.
 
+## Inference Candidate Set
+
+Models read `data/processed/inference_candidates.csv` during inference. Create it with:
+
+```bash
+uv run src/movielens/sample_candidates.py
+```
+
+Default candidate generation samples 100 random movies per user from:
+
+```text
+all catalog movies - train/val watched movies - test movie
+```
+
+Then it appends the user's held-out test movie, giving 101 inference candidates per user. The default seed is 42. Recommendation scripts score only these candidates and save the top 100 rows per user to `data/recs/{experiment}.csv`.
+
 ## Columns
 
 | Column | Type | Description |

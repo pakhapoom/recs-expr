@@ -2,11 +2,18 @@ import sys
 import time
 from pathlib import Path
 
+project_root = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "src" / "models" / "candidate_sets.py").exists()
+)
+sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
 import pandas as pd
 import torch
+
+from src.models.candidate_sets import candidate_indices, load_candidate_map
 
 from features import FeatureStore
 from model import TwoTowerModel, RankingModel
@@ -91,6 +98,7 @@ class TwoTowerRecommender:
         test_path: str = "data/processed/test.csv",
         users_path: str = "data/raw/users.csv",
         movies_path: str = "data/raw/movies.csv",
+        candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/two_tower.csv",
         metrics_dir: str = "data/metrics",
     ):
@@ -139,6 +147,14 @@ class TwoTowerRecommender:
                 store.movie_id2idx.get(str(mid), 0)
                 for mid in group[self.item_col]
             }
+        test_users = test[self.user_col].astype(str).unique().tolist()
+        candidate_map = load_candidate_map(
+            candidates_path,
+            self.user_col,
+            self.item_col,
+            test_users,
+        )
+        candidate_idx_by_user = candidate_indices(candidate_map, store.movie_id2idx)
 
         # --- Stage 2: ranking ---
         print("Stage 2: Training ranking model...")
@@ -173,7 +189,6 @@ class TwoTowerRecommender:
 
         # --- Recommend for test users ---
         print("Generating recommendations...")
-        test_users = test[self.user_col].unique()
         retrieval_model.eval()
         ranker.eval()
 
@@ -188,14 +203,34 @@ class TwoTowerRecommender:
                 )  # (1, D)
 
                 # Retrieval: dot-product over all items, mask watched
-                retrieval_scores = (user_emb.cpu().numpy() @ all_item_emb_np.T)[0]  # (M,)
                 watched_idxs = history_sets.get(uid, set())
-                for w in watched_idxs:
-                    retrieval_scores[w] = -np.inf
+                if candidate_idx_by_user is None:
+                    retrieval_scores = (user_emb.cpu().numpy() @ all_item_emb_np.T)[0]
+                    for w in watched_idxs:
+                        retrieval_scores[w] = -np.inf
 
-                n_candidates = min(self.n_candidates, int((retrieval_scores > -np.inf).sum()))
-                top_k_idxs = np.argpartition(retrieval_scores, -n_candidates)[-n_candidates:]
-                top_k_idxs = top_k_idxs[np.argsort(retrieval_scores[top_k_idxs])[::-1]]
+                    n_candidates = min(self.n_candidates, int((retrieval_scores > -np.inf).sum()))
+                    top_k_idxs = np.argpartition(retrieval_scores, -n_candidates)[-n_candidates:]
+                    top_k_idxs = top_k_idxs[np.argsort(retrieval_scores[top_k_idxs])[::-1]]
+                else:
+                    item_candidates = candidate_idx_by_user.get(
+                        uid,
+                        np.asarray([], dtype=np.int64),
+                    )
+                    item_candidates = np.asarray(
+                        [idx for idx in item_candidates if idx not in watched_idxs],
+                        dtype=np.int64,
+                    )
+                    if len(item_candidates) == 0:
+                        continue
+
+                    retrieval_scores = (
+                        user_emb.cpu().numpy() @ all_item_emb_np[item_candidates].T
+                    )[0]
+                    n_candidates = min(self.n_candidates, len(item_candidates))
+                    top = np.argpartition(retrieval_scores, -n_candidates)[-n_candidates:]
+                    top = top[np.argsort(retrieval_scores[top])[::-1]]
+                    top_k_idxs = item_candidates[top]
 
                 # Ranking: re-score top-K candidates
                 cand_idx_t = torch.tensor(top_k_idxs, dtype=torch.long, device=device)

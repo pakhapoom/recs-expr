@@ -9,6 +9,7 @@ A two-stage neural recommender (retrieval → ranking) trained on MovieLens 1M.
 | `data/processed/train.csv` | Model training + user watch histories |
 | `data/processed/val.csv` | Merged with train for inference-time user histories |
 | `data/processed/test.csv` | Provides the set of users to recommend for |
+| `data/processed/inference_candidates.csv` | Sampled inference candidates: 100 random unwatched movies plus the held-out test movie |
 | `data/raw/users.csv` | User demographic features |
 | `data/raw/movies.csv` | Item features (genres, release year) |
 
@@ -29,7 +30,7 @@ Two-tower weights are frozen. A shallow MLP scores `[u ‖ i ‖ u⊙i]` trained
 ## Inference
 
 1. Pre-encode all items once.
-2. Per test user: dot-product retrieval over all items → mask watched → top 500 candidates.
+2. Per test user: read sampled inference candidates and run dot-product retrieval over that set.
 3. `RankingModel` re-scores candidates → top 100 recommendations.
 4. Output: `data/recs/two_tower.csv` (`user_id`, `movie_id`, `score`).
 

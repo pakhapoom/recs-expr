@@ -1,7 +1,16 @@
+import sys
 import time
 from pathlib import Path
 
 import pandas as pd
+
+project_root = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "src" / "models" / "candidate_sets.py").exists()
+)
+sys.path.insert(0, str(project_root))
+
+from src.models.candidate_sets import load_candidate_map
 
 
 class PopularityRecommender:
@@ -83,8 +92,8 @@ class PopularityRecommender:
         mask = pd.Series([True] * len(seg_pop))
         for col, val in user_segment.items():
             mask &= seg_pop[col] == val
-        candidates = seg_pop[mask][[self.item_col, self.score_col]]
 
+        candidates = seg_pop[mask][[self.item_col, self.score_col]]
         candidates = candidates[~candidates[self.item_col].isin(watched)]
         if len(candidates) < self.min_segment_size:
             candidates = global_pop[~global_pop[self.item_col].isin(watched)][
@@ -96,12 +105,47 @@ class PopularityRecommender:
         candidates[self.user_col] = user_id
         return candidates[[self.user_col, self.item_col, self.score_col]]
 
+    def _recommend_candidate_user(
+        self,
+        user_id: str,
+        candidate_ids: list[str],
+        watched: set[str],
+        user_segment: dict,
+        seg_lookup: dict,
+        global_lookup: dict,
+    ) -> pd.DataFrame:
+        seg_prefix = tuple(user_segment.get(col) for col in self.segment_cols)
+        rows = []
+        scored = 0
+
+        for movie_id in dict.fromkeys(candidate_ids):
+            if movie_id in watched:
+                continue
+            score = seg_lookup.get((*seg_prefix, movie_id))
+            scored += score is not None
+            rows.append({self.item_col: movie_id, self.score_col: score})
+
+        if scored < self.min_segment_size:
+            for row in rows:
+                row[self.score_col] = global_lookup.get(row[self.item_col], 0.0)
+        else:
+            for row in rows:
+                if row[self.score_col] is None:
+                    row[self.score_col] = 0.0
+
+        candidates = pd.DataFrame(rows)
+        candidates = candidates.sort_values(self.score_col, ascending=False).head(self.n_recs)
+        candidates = candidates.copy()
+        candidates[self.user_col] = user_id
+        return candidates[[self.user_col, self.item_col, self.score_col]]
+
     def run(
         self,
         train_path: str = "data/processed/train.csv",
         val_path: str = "data/processed/val.csv",
         test_path: str = "data/processed/test.csv",
         users_path: str = "data/raw/users.csv",
+        candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/popularity.csv",
         metrics_dir: str = "data/metrics",
     ):
@@ -114,22 +158,48 @@ class PopularityRecommender:
 
         user_history = self._get_user_history(train, val)
         user_segments = users.set_index(self.user_col)[self.segment_cols].to_dict("index")
-        test_users = test[self.user_col].unique()
+        test_users = test[self.user_col].astype(str).unique().tolist()
+        candidate_map = load_candidate_map(
+            candidates_path,
+            self.user_col,
+            self.item_col,
+            test_users,
+        )
 
         t0 = time.perf_counter()
-        recs = pd.concat(
-            [
-                self._recommend_user(
-                    user,
-                    seg_pop,
-                    global_pop,
-                    user_history.get(user, set()),
-                    user_segments.get(user, {}),
-                )
-                for user in test_users
-            ],
-            ignore_index=True,
-        )
+        if candidate_map is None:
+            recs = pd.concat(
+                [
+                    self._recommend_user(
+                        user,
+                        seg_pop,
+                        global_pop,
+                        user_history.get(user, set()),
+                        user_segments.get(user, {}),
+                    )
+                    for user in test_users
+                ],
+                ignore_index=True,
+            )
+        else:
+            seg_lookup = seg_pop.set_index(
+                self.segment_cols + [self.item_col]
+            )[self.score_col].to_dict()
+            global_lookup = global_pop.set_index(self.item_col)[self.score_col].to_dict()
+            recs = pd.concat(
+                [
+                    self._recommend_candidate_user(
+                        user,
+                        candidate_map[user],
+                        user_history.get(user, set()),
+                        user_segments.get(user, {}),
+                        seg_lookup,
+                        global_lookup,
+                    )
+                    for user in test_users
+                ],
+                ignore_index=True,
+            )
         time_inference_s = time.perf_counter() - t0
 
         out = Path(recs_path)

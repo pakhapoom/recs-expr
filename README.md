@@ -18,13 +18,21 @@ Applies leave-one-out splitting and writes `train.csv`, `val.csv`, and `test.csv
 uv run src/movielens/split.py
 ```
 
-### 3. Train a model
+### 3. Sample inference candidates
+
+Creates `data/processed/inference_candidates.csv` with 100 random unwatched movies per user plus that user's held-out test movie. The default seed is 42.
+
+```bash
+uv run src/movielens/sample_candidates.py
+```
+
+### 4. Train a model
 
 Before implementing a model, read [`src/models/recs_schema.md`](src/models/recs_schema.md) — it defines the output schema your model must produce (columns: `user_id`, `movie_id`, `score`).
 
 Place your model under `src/models/` and write its recommendations to a CSV conforming to that schema, e.g. `data/recs/<experiment>.csv`.
 
-### 4. Evaluate
+### 5. Evaluate
 
 Run the LOO evaluator against your recommendations CSV. Pass the experiment name used when saving the file — metrics are written to `data/metrics/<experiment>.csv`.
 
@@ -48,7 +56,7 @@ ndcg@100  0.059200
 Saved → data/metrics/my_model.csv
 ```
 
-### 5. Plot NDCG@k
+### 6. Plot NDCG@k
 
 Plots the `ndcg@k` rows from the default experiment metrics files in `data/metrics/` and saves a comparison chart to `data/viz/`.
 

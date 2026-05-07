@@ -1,8 +1,17 @@
+import sys
 import time
 from pathlib import Path
 
+project_root = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "src" / "models" / "candidate_sets.py").exists()
+)
+sys.path.insert(0, str(project_root))
+
 import numpy as np
 import pandas as pd
+
+from src.models.candidate_sets import load_candidate_map
 
 
 class RandomRecommender:
@@ -42,39 +51,55 @@ class RandomRecommender:
             .to_dict()
         )
 
-    def _recommend_user(
-        self, user_id: str, item_pool: list[str], watched: set[str]
-    ) -> pd.DataFrame:
-        candidates = [i for i in item_pool if i not in watched]
+    def _recommend_user(self, user_id: str, candidates: list[str]) -> pd.DataFrame:
         rng = np.random.default_rng(hash(f"{self.seed}:{user_id}") % (2**32))
         n = min(self.n_recs, len(candidates))
-        sampled = rng.choice(candidates, size=n, replace=False)
-        scores = rng.uniform(size=n)
-        return pd.DataFrame(
-            {self.user_col: user_id, self.item_col: sampled, self.score_col: scores}
+        scores = rng.uniform(size=len(candidates))
+        recs = pd.DataFrame(
+            {self.user_col: user_id, self.item_col: candidates, self.score_col: scores}
         )
+        return recs.sort_values(self.score_col, ascending=False).head(n)
 
     def run(
         self,
         train_path: str = "data/processed/train.csv",
         val_path: str = "data/processed/val.csv",
         test_path: str = "data/processed/test.csv",
+        candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/random.csv",
         metrics_dir: str = "data/metrics",
     ):
         train, val, test = self._load_data(train_path, val_path, test_path)
-        item_pool = self._get_item_pool(train)
-        user_history = self._get_user_history(train, val)
-        test_users = test[self.user_col].unique()
+        test_users = test[self.user_col].astype(str).unique().tolist()
+        candidate_map = load_candidate_map(
+            candidates_path,
+            self.user_col,
+            self.item_col,
+            test_users,
+        )
 
         t0 = time.perf_counter()
-        recs = pd.concat(
-            [
-                self._recommend_user(user, item_pool, user_history.get(user, set()))
-                for user in test_users
-            ],
-            ignore_index=True,
-        )
+        if candidate_map is None:
+            item_pool = self._get_item_pool(train)
+            user_history = self._get_user_history(train, val)
+            recs = pd.concat(
+                [
+                    self._recommend_user(
+                        user,
+                        [i for i in item_pool if i not in user_history.get(user, set())],
+                    )
+                    for user in test_users
+                ],
+                ignore_index=True,
+            )
+        else:
+            recs = pd.concat(
+                [
+                    self._recommend_user(user, candidate_map[user])
+                    for user in test_users
+                ],
+                ignore_index=True,
+            )
         time_inference_s = time.perf_counter() - t0
 
         out = Path(recs_path)

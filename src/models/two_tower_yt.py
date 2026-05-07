@@ -1,13 +1,22 @@
 import argparse
 import re
+import sys
 import time
 from pathlib import Path
+
+project_root = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "src" / "models" / "candidate_sets.py").exists()
+)
+sys.path.insert(0, str(project_root))
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from src.models.candidate_sets import candidate_indices, load_candidate_map
 
 
 GENRES = [
@@ -429,11 +438,13 @@ class YouTubeTwoTowerRecommender:
         hist_items: np.ndarray,
         hist_weights: np.ndarray,
         watched: np.ndarray,
+        candidate_map: dict[str, list[str]] | None,
         device: str,
     ) -> pd.DataFrame:
         model.eval()
         test_users = test[self.user_col].astype(str).drop_duplicates().tolist()
         test_user_idx = np.array([features["user_id2idx"][user_id] for user_id in test_users])
+        candidate_idx_by_user = candidate_indices(candidate_map, features["movie_id2idx"])
 
         gender_t = torch.tensor(features["gender"], dtype=torch.float32, device=device)
         age_t = torch.tensor(features["age"], dtype=torch.long, device=device)
@@ -465,21 +476,32 @@ class YouTubeTwoTowerRecommender:
                     serving_age_t[users],
                 ).cpu().numpy()
 
-                scores = user_emb @ item_emb.T * scale + item_bias[None, :]
-                scores[watched[batch_idx]] = -np.inf
-
                 for row_pos, user_idx in enumerate(batch_idx):
-                    top_n = min(self.n_recs, int(np.isfinite(scores[row_pos]).sum()))
+                    user_id = features["user_ids"][user_idx]
+                    if candidate_idx_by_user is None:
+                        item_candidates = np.flatnonzero(~watched[user_idx])
+                    else:
+                        item_candidates = candidate_idx_by_user.get(
+                            user_id,
+                            np.asarray([], dtype=np.int64),
+                        )
+                        item_candidates = item_candidates[~watched[user_idx, item_candidates]]
+
+                    top_n = min(self.n_recs, len(item_candidates))
                     if top_n == 0:
                         continue
-                    top = np.argpartition(scores[row_pos], -top_n)[-top_n:]
-                    top = top[np.argsort(scores[row_pos, top])[::-1]]
-                    user_id = features["user_ids"][user_idx]
+                    scores = (
+                        user_emb[row_pos] @ item_emb[item_candidates].T * scale
+                        + item_bias[item_candidates]
+                    )
+                    top = np.argpartition(scores, -top_n)[-top_n:]
+                    top = top[np.argsort(scores[top])[::-1]]
                     for item in top:
+                        item_idx = item_candidates[item]
                         rows.append({
                             self.user_col: user_id,
-                            self.item_col: features["movie_ids"][item],
-                            self.score_col: float(scores[row_pos, item]),
+                            self.item_col: features["movie_ids"][item_idx],
+                            self.score_col: float(scores[item]),
                         })
 
         return pd.DataFrame(rows)
@@ -491,6 +513,7 @@ class YouTubeTwoTowerRecommender:
         test_path: str = "data/processed/test.csv",
         users_path: str = "data/raw/users.csv",
         movies_path: str = "data/raw/movies.csv",
+        candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/two_tower_yt.csv",
         metrics_dir: str = "data/metrics",
     ):
@@ -513,6 +536,13 @@ class YouTubeTwoTowerRecommender:
         features = self._build_features(users, movies)
         examples = self._build_training_examples(fit, features)
         hist_items, hist_weights, watched = self._build_inference_history(fit, features)
+        test_users = test[self.user_col].astype(str).drop_duplicates().tolist()
+        candidate_map = load_candidate_map(
+            candidates_path,
+            self.user_col,
+            self.item_col,
+            test_users,
+        )
 
         print(f"Training examples: {len(examples['user_idx']):,}")
         model = YouTubeTwoTowerModel(
@@ -529,7 +559,16 @@ class YouTubeTwoTowerRecommender:
         time_training_s = time.perf_counter() - t_train_start
 
         t_infer_start = time.perf_counter()
-        recs = self._recommend(model, test, features, hist_items, hist_weights, watched, device)
+        recs = self._recommend(
+            model,
+            test,
+            features,
+            hist_items,
+            hist_weights,
+            watched,
+            candidate_map,
+            device,
+        )
         time_inference_s = time.perf_counter() - t_infer_start
 
         out = Path(recs_path)
@@ -555,6 +594,7 @@ def _parse_args():
     parser.add_argument("--test-path", default="data/processed/test.csv")
     parser.add_argument("--users-path", default="data/raw/users.csv")
     parser.add_argument("--movies-path", default="data/raw/movies.csv")
+    parser.add_argument("--candidates-path", default="data/processed/inference_candidates.csv")
     parser.add_argument("--recs-path", default="data/recs/two_tower_yt.csv")
     parser.add_argument("--metrics-dir", default="data/metrics")
     parser.add_argument("--n-recs", type=int, default=100)
@@ -591,6 +631,7 @@ if __name__ == "__main__":
         test_path=args.test_path,
         users_path=args.users_path,
         movies_path=args.movies_path,
+        candidates_path=args.candidates_path,
         recs_path=args.recs_path,
         metrics_dir=args.metrics_dir,
     )
