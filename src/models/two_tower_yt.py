@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.artifacts import cpu_state_dict, save_model_artifact
 from src.models.candidate_sets import candidate_indices, load_candidate_map
 
 
@@ -214,6 +215,9 @@ class YouTubeTwoTowerRecommender:
             "movie_ids": movie_ids,
             "user_id2idx": user_id2idx,
             "movie_id2idx": movie_id2idx,
+            "age_vocab": age2idx,
+            "occ_vocab": occ2idx,
+            "zip_vocab": zip2idx,
             "gender": gender,
             "age": age,
             "occ": occ,
@@ -516,6 +520,7 @@ class YouTubeTwoTowerRecommender:
         candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/two_tower_yt.csv",
         metrics_dir: str = "data/metrics",
+        model_dir: str = "data/models",
     ):
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -557,6 +562,43 @@ class YouTubeTwoTowerRecommender:
         t_train_start = time.perf_counter()
         model = self._train(model, examples, features, watched, device)
         time_training_s = time.perf_counter() - t_train_start
+        experiment = Path(recs_path).stem
+        save_model_artifact(
+            model_dir,
+            experiment,
+            {
+                "artifact_version": 1,
+                "model": "YouTubeTwoTowerRecommender",
+                "model_state_dict": cpu_state_dict(model),
+                "model_kwargs": {
+                    "num_items": len(features["movie_ids"]),
+                    "num_ages": features["num_ages"],
+                    "num_occs": features["num_occs"],
+                    "num_zips": features["num_zips"],
+                    "embed_dim": self.embed_dim,
+                    "pad_item_idx": len(features["movie_ids"]),
+                },
+                "features": features,
+                "config": {
+                    "n_recs": self.n_recs,
+                    "max_history": self.max_history,
+                    "max_examples_per_user": self.max_examples_per_user,
+                    "embed_dim": self.embed_dim,
+                    "epochs": self.epochs,
+                    "batch_size": self.batch_size,
+                    "n_neg": self.n_neg,
+                    "lr": self.lr,
+                    "weight_decay": self.weight_decay,
+                    "seed": self.seed,
+                    "max_users": self.max_users,
+                },
+                "columns": {
+                    "user_col": self.user_col,
+                    "item_col": self.item_col,
+                    "score_col": self.score_col,
+                },
+            },
+        )
 
         t_infer_start = time.perf_counter()
         recs = self._recommend(
@@ -576,7 +618,6 @@ class YouTubeTwoTowerRecommender:
         recs.to_csv(out, index=False)
         print(f"Saved {len(recs):,} rows -> {out}")
 
-        experiment = out.stem
         timing = pd.DataFrame([
             {"metric": "time_training_s", "value": time_training_s},
             {"metric": "time_inference_s", "value": time_inference_s},
@@ -597,6 +638,7 @@ def _parse_args():
     parser.add_argument("--candidates-path", default="data/processed/inference_candidates.csv")
     parser.add_argument("--recs-path", default="data/recs/two_tower_yt.csv")
     parser.add_argument("--metrics-dir", default="data/metrics")
+    parser.add_argument("--model-dir", default="data/models")
     parser.add_argument("--n-recs", type=int, default=100)
     parser.add_argument("--max-history", type=int, default=50)
     parser.add_argument("--max-examples-per-user", type=int, default=50)
@@ -634,4 +676,5 @@ if __name__ == "__main__":
         candidates_path=args.candidates_path,
         recs_path=args.recs_path,
         metrics_dir=args.metrics_dir,
+        model_dir=args.model_dir,
     )

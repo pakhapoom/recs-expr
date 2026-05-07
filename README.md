@@ -32,7 +32,17 @@ Before implementing a model, read [`src/models/recs_schema.md`](src/models/recs_
 
 Place your model under `src/models/` and write its recommendations to a CSV conforming to that schema, e.g. `data/recs/<experiment>.csv`.
 
-### 5. Evaluate
+Trained models also save a PyTorch artifact to `data/models/<experiment>.pt`. Baseline recommenders (`random`, `popularity`) do not write model artifacts.
+
+### 5. Score user/movie pairs
+
+Loads a trained model artifact and scores a CSV with `user_id,movie_id` columns. User history is rebuilt from `train.csv` plus `val.csv`; unknown users or movies are preserved with `NaN` scores.
+
+```bash
+uv run src/models/score_pairs.py --model-path data/models/two_tower_v2.pt --pairs-path data/inference/pairs.csv --output-path data/scores/two_tower_v2_pairs.csv
+```
+
+### 6. Evaluate
 
 Run the LOO evaluator against your recommendations CSV. Pass the experiment name used when saving the file — metrics are written to `data/metrics/<experiment>.csv`.
 
@@ -56,7 +66,7 @@ ndcg@100  0.059200
 Saved → data/metrics/my_model.csv
 ```
 
-### 6. Plot NDCG@k
+### 7. Plot NDCG@k
 
 Plots the `ndcg@k` rows from the default experiment metrics files in `data/metrics/` and saves a comparison chart to `data/viz/`.
 

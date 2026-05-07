@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.artifacts import cpu_state_dict, save_model_artifact
 from src.models.candidate_sets import candidate_indices, load_candidate_map
 
 
@@ -206,6 +207,9 @@ class TwoTowerV2Recommender:
             "movie_ids": movie_ids,
             "user_id2idx": user_id2idx,
             "movie_id2idx": movie_id2idx,
+            "age_vocab": age2idx,
+            "occ_vocab": occ2idx,
+            "zip_vocab": zip2idx,
             "gender": gender,
             "age": age,
             "occ": occ,
@@ -453,6 +457,7 @@ class TwoTowerV2Recommender:
         candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/two_tower_v2.csv",
         metrics_dir: str = "data/metrics",
+        model_dir: str = "data/models",
     ):
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -499,10 +504,46 @@ class TwoTowerV2Recommender:
             hist_items,
             hist_weights,
             watched,
-            candidate_map,
             device,
         )
         time_training_s = time.perf_counter() - t_train_start
+        experiment = Path(recs_path).stem
+        save_model_artifact(
+            model_dir,
+            experiment,
+            {
+                "artifact_version": 1,
+                "model": "TwoTowerV2Recommender",
+                "model_state_dict": cpu_state_dict(model),
+                "model_kwargs": {
+                    "num_users": len(features["user_ids"]),
+                    "num_items": len(features["movie_ids"]),
+                    "num_ages": features["num_ages"],
+                    "num_occs": features["num_occs"],
+                    "num_zips": features["num_zips"],
+                    "num_genres": len(GENRES),
+                    "embed_dim": self.embed_dim,
+                    "pad_item_idx": len(features["movie_ids"]),
+                },
+                "features": features,
+                "config": {
+                    "n_recs": self.n_recs,
+                    "max_history": self.max_history,
+                    "embed_dim": self.embed_dim,
+                    "epochs": self.epochs,
+                    "batch_size": self.batch_size,
+                    "n_neg": self.n_neg,
+                    "lr": self.lr,
+                    "weight_decay": self.weight_decay,
+                    "seed": self.seed,
+                },
+                "columns": {
+                    "user_col": self.user_col,
+                    "item_col": self.item_col,
+                    "score_col": self.score_col,
+                },
+            },
+        )
 
         t_infer_start = time.perf_counter()
         recs = self._recommend(
@@ -512,6 +553,7 @@ class TwoTowerV2Recommender:
             hist_items,
             hist_weights,
             watched,
+            candidate_map,
             device,
         )
         time_inference_s = time.perf_counter() - t_infer_start
@@ -521,7 +563,6 @@ class TwoTowerV2Recommender:
         recs.to_csv(out, index=False)
         print(f"Saved {len(recs):,} rows -> {out}")
 
-        experiment = out.stem
         timing = pd.DataFrame([
             {"metric": "time_training_s", "value": time_training_s},
             {"metric": "time_inference_s", "value": time_inference_s},

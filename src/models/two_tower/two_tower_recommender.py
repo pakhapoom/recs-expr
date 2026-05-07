@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from src.models.artifacts import cpu_state_dict, save_model_artifact
 from src.models.candidate_sets import candidate_indices, load_candidate_map
 
 from features import FeatureStore
@@ -101,6 +102,7 @@ class TwoTowerRecommender:
         candidates_path: str = "data/processed/inference_candidates.csv",
         recs_path: str = "data/recs/two_tower.csv",
         metrics_dir: str = "data/metrics",
+        model_dir: str = "data/models",
     ):
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -174,6 +176,58 @@ class TwoTowerRecommender:
         )
 
         time_training_s = time.perf_counter() - t_train_start
+        experiment = Path(recs_path).stem
+        save_model_artifact(
+            model_dir,
+            experiment,
+            {
+                "artifact_version": 1,
+                "model": "TwoTowerRecommender",
+                "retrieval_model_state_dict": cpu_state_dict(retrieval_model),
+                "ranking_model_state_dict": cpu_state_dict(ranker),
+                "retrieval_model_kwargs": {
+                    "num_movies": len(store.movie_ids),
+                    "num_ages": len(store.age_vocab),
+                    "num_occs": len(store.occ_vocab),
+                    "num_zips": len(store.zip_vocab),
+                    "item_emb_dim": self.item_emb_dim,
+                    "embed_dim": self.embed_dim,
+                },
+                "ranking_model_kwargs": {
+                    "embed_dim": self.embed_dim,
+                },
+                "feature_store": {
+                    "max_history": store.max_history,
+                    "movie_ids": store.movie_ids,
+                    "movie_id2idx": store.movie_id2idx,
+                    "age_vocab": store.age_vocab,
+                    "occ_vocab": store.occ_vocab,
+                    "zip_vocab": store.zip_vocab,
+                    "year_mean": store.year_mean,
+                    "year_std": store.year_std,
+                    "item_genres": store.item_genres,
+                    "item_year": store.item_year,
+                },
+                "config": {
+                    "n_recs": self.n_recs,
+                    "n_candidates": self.n_candidates,
+                    "max_history": self.max_history,
+                    "item_emb_dim": self.item_emb_dim,
+                    "embed_dim": self.embed_dim,
+                    "retrieval_epochs": self.retrieval_epochs,
+                    "ranking_epochs": self.ranking_epochs,
+                    "batch_size": self.batch_size,
+                    "lr": self.lr,
+                    "n_neg": self.n_neg,
+                    "seed": self.seed,
+                },
+                "columns": {
+                    "user_col": self.user_col,
+                    "item_col": self.item_col,
+                    "score_col": self.score_col,
+                },
+            },
+        )
 
         t_infer_start = time.perf_counter()
 
@@ -261,7 +315,6 @@ class TwoTowerRecommender:
         recs.to_csv(out, index=False)
         print(f"Saved {len(recs):,} rows → {out}")
 
-        experiment = out.stem
         timing = pd.DataFrame([
             {"metric": "time_training_s", "value": time_training_s},
             {"metric": "time_inference_s", "value": time_inference_s},

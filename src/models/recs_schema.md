@@ -96,3 +96,19 @@ ndcg@100,0.34
 ```
 
 > When implementing a new model, call `time.perf_counter()` around the training and inference phases inside `run()`, then write a `data/metrics/{experiment}.csv` with the two timing rows before returning. `LOOEvaluator` will append the ranking rows.
+
+## Model Artifact (`data/models/{experiment}.pt`)
+
+Trained recommenders save a PyTorch artifact named after the recommendations CSV stem. For example, `data/recs/two_tower_v2.csv` writes `data/models/two_tower_v2.pt`.
+
+The artifact should include model weights, model construction kwargs, feature vocabularies/mappings, recommender config, and column names. Stateless and baseline models do not write artifacts: `RandomRecommender` and `PopularityRecommender` are excluded.
+
+## Pair Scoring (`score_pairs.py`)
+
+Saved trained artifacts can score arbitrary `user_id,movie_id` CSV rows:
+
+```bash
+uv run src/models/score_pairs.py --model-path data/models/two_tower_v2.pt --pairs-path data/inference/pairs.csv --output-path data/scores/two_tower_v2_pairs.csv
+```
+
+The output preserves input row order and columns, overwriting or appending `score`. User history is rebuilt from `data/processed/train.csv` plus `data/processed/val.csv`; unknown users, unknown movies, or rows unsupported by the artifact receive `NaN`.
